@@ -1,0 +1,94 @@
+#!/bin/bash
+#-*- mode: scala; -*-
+
+##exec scala "$0" "$0" "$@"
+exec java \
+     -Dsbt.main.class=sbt.ScriptMain \
+     -Dsbt.boot.directory=~/.sbt/boot \
+     -Dsbt.log.noformat=true \
+     -jar $(which sbt-launch.jar) $0 "$@"
+!#
+/***
+  scalaVersion := "2.11.7"
+
+  resolvers ++=
+    Seq(
+      Resolver.jcenterRepo,
+      Resolver.url("frgomes resolver", url("http://dl.bintray.com/frgomes/sbt-plugins"))
+                  (Resolver.ivyStylePatterns))
+ 
+  addSbtPlugin("info.rgomes" %% "sbt-snippets" % "0.1.0")
+
+  libraryDependencies ++=
+    Seq(
+      "org.scala-lang.modules" %% "scala-xml" % "1.0.5",
+      "com.github.scopt"       %% "scopt"     % "3.3.0",
+      "org.ccil.cowan.tagsoup" %  "tagsoup"   % "1.2.1" )
+*/
+
+
+case class Cmd(pkgname: String = null, clsname: String = null, keep: Boolean = false, input: String = null, output: String = null)
+
+
+class CLI(args : Array[String]) {
+  // FIXME: http://stackoverflow.com/questions/7163364/how-to-handle-in-file-paths
+  private val re   = "^~".r
+  private val home = System.getProperty("user.home")
+
+  private val parser = 
+    new scopt.OptionParser[Cmd]("translator") {
+      head("""usage: translator [<input>] [<output>]
+           |synopsis:
+           |  Translate a HTML file to ScalaJS, employing Scalatags and Dejawu.
+           |  More info on ScalaJS:      https://github.com/scala-js/scala-js
+           |               Scalatags:    https://github.com/lihaoyi/scalatags
+           |               Dejawu:       https://github.com/frgomes/dejawu
+           |options:""".stripMargin)
+      opt[Unit]('k', "keep-markup").valueName("[keep-markup]")
+        .optional
+        .action { (o, c) => c.copy( keep = true ) }
+        .text("""Keep the markup as it is, without employing dejawu tags.""")
+      opt[String]('m', "main-class").valueName("[main-class]")
+        .action { (o, c) => c.copy( clsname = o ) }
+        .text("""Fully qualified class name""")
+      arg[String]("<input>")
+        .optional()
+        .action { (o, c) => c.copy( input = re.replaceFirstIn(o, home) ) }
+        .text("""Input .html file or "-" (without quotes) for stdin.""")
+      arg[String]("<output>")
+        .optional()
+        .action { (o, c) => c.copy( output = re.replaceFirstIn(o, home) ) }
+        .text("""Output .scala file or "-" (without quotes) for stdout.""")
+    }
+
+  private def validate(c : Option[Cmd]) : Option[Cmd] =
+    if(!c.isDefined) c else
+      if(c.get.clsname != null && c.get.clsname.trim.length > 0) {
+        val parts = c.get.clsname.trim.split('.')
+        val pkgname : String = if(parts.length < 2) "" else parts.reverse.tail.reverse.mkString(".")
+        val clsname : String = parts.length match {
+          case 0 => "Noname"
+          case 1 => c.get.clsname.trim
+          case _ => parts.last }
+        Option(Cmd(pkgname, clsname, c.get.keep, c.get.input, c.get.output)) }
+      else { Option(Cmd(null, null, c.get.keep, c.get.input, c.get.output)) }
+
+  val parse : Option[Cmd] = validate(parser.parse(args, Cmd()))
+
+}
+
+object Translator {
+  def main(args: Array[String]) {
+    val cmd  = new CLI(args).parse
+    //TODO val tool = new Translator
+    //TODO if (cmd.isDefined) tool.translate(cmd.get)
+  }
+}
+
+
+val fqcn  = "org.dejawu.demos.ThemePreviewer"
+val html  = "https://raw.githubusercontent.com/dojo/demos/master/themePreviewer/demo.html"
+val scala = "ThemePreviewer.scala"
+Translator.main(Array("-k", "-m", fqcn, html, scala))
+
+println("done.")
